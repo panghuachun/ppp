@@ -1,0 +1,150 @@
+一次完整的安全渗透测试
+　　网络渗透测试就是利用所有的手段进行测试，发现和挖掘系统中存在的漏洞，然后撰写渗透测试报告，将其提供给客户;客户根据渗透人员提供的渗透测试报告对系统存在漏洞和问题的地方进行修复和修补，本次渗透测试算是针对aspx类型的网站系统的一个补充。下面是整个渗透过程和一些渗透思路，写出来跟大家一起探讨和分享，不到之处请指正。
+　　(一)初步的安全渗透测试
+1.漏洞扫描
+直接打开JSky Web漏洞扫描器，新建一个扫描任务，输入要扫描的地址http://www.*****.com，然后开始扫描，扫描结果如图1所示，没有任何高危漏洞，通过分析扫描结果，我们知道该网站采用的是Asp.net编写的，无注入漏洞，在扫描结果中存在“admin”和“upload”目录。难道该系统就没有可渗透之处?一般网站非常安全的可能性非常低，只有绝对不安全的系统，没有绝对安全的系统。
+
+图1 使用Jsky扫描网站的扫描结果
+2.网站目录访问测试
+复制http://www.xxxxxxx.com/admin地址到IE浏览器中，进行测试看看能否实际打开该地址，如图2所示，可以打开而且为管理员后台地址。
+
+图2 测试扫描出路径的页面是否存在
+说明：
+对存在目录进行实际访问主要是看系统是否存在一些报错等提示信息，然后根据这些信息再次进行分析和利用，为渗透提供一些判断和支持。
+3.使用社工进行登陆测试
+在图2的用户名中输入admin，密码中输入一些常见的密码进行测试，人品好，没有办法，还愣是进去了，如图3所示，页面比较简洁。
+
+图3 成功进入后台
+说明：
+本次的成功渗透就来自于本次的成功进入后台，实际上如果社工猜测到密码，拿到该服务器的权限还是比较难的，所以在实际渗透测试过程中，各种想法和思路都可以进行测试，只要能够进入系统，能够获取一定的权限的方法都是好方法。
+4.寻找突破点
+整个系统一共就6个模块，对各个功能模块进行了查看，发现很多模块功能都是一样的，如图4所示，均是简单的数据添加、删除和修改。
+
+图4 浏览其它功能模块
+5.修改管理员
+在本网站系统中，无用户管理，仅仅一个修改管理员密码，如图5所示，考虑到该密码非常简单，出于安全考虑，直接将其修改为一个复杂的密码，然后将修改的密码告诉管理员。
+(二)旁注渗透测试
+渗透测试时如果正面不行，那么就采用一些迂回战术，从侧面来进行。也就是采用一些间接的方法，例如旁注。
+1.获取该网站所在服务中的所有其它域名
+直接在IE地址栏输入：“http://www.ip866.com/reverse.aspx?domain=www.rain**.com”，打开“反查域名”页面，单击“点这里反查全部相关域名”，如图6所示，在该服务器中一共有9个域名。
+
+图6 查询域名绑定情况
+2.扫描漏洞
+任选一个域名，在Jsky中进行扫描，如图7所示，出现了8个SQL注入点，心中一顿狂喜，看来有戏，对于渗透测试人员没有什么比发现有漏洞更为高兴的事情了。
+
+图7 获取SQL注入点
+3.SQL注入手工测试
+在扫描结果的SQL注入点列表中选中一个地址，然后在浏览器中打开，并手工加入一些测试SQL注入点的东东，结果出现图8、图9所示的防注入提示和记录信息。
+
+图8 系统使用了Flashack防注入系统
+
+图9 防注入记录系统
+4.获取数据库类型
+继续测试，将ID值换成一个数字+字母类型的值，结果就爆出数据库出错提示，如图10所示，数据库类型是MS SQL Server，由此可以判断该服务器的操作系统也是Windows的，极有可能是Windows2003.
+
+图10 通过出错获取网站数据的类型
+说明：
+在很多防注入系统都对and、exe等关键字进行过滤，对于传入的值的范围并没有进行严格的限制，因此可以通过变换值出错来获取一些信息。
+5.使用pangolin进行SQL注入测试
+在Jsky扫描窗口选中存在SQL注入点的地址，然后选择渗透测试，如图11所示，先对SQL注入点进行检测，然后获取数据库等信息，在本次检测中很明显由于有SQL防注入系统的存在，所以无法猜测出任何有用的信息。
+
+图11 使用pangolin进行SQL注入测试
+看来旁注等方法均不可行，无法进一步获取权限，看来只能通过前面获取的权限来想办法了。
+　　(三)通过CuteEditor上传而获得突破
+由于微软的IIS6存在着一个文件解析路径的漏洞，当文件夹名为类似“xxx.asp”的时候(即文件夹名看起来像一个ASP文件的文件名)，此时此文件夹下的文本类型的文件都可以在IIS中被当作ASP程序来执行。这样可上传扩展名为jpg或gif之类的看起来像是图片文件的木马文件，通过访问这个文件即可运行木马。
+通过分析和观察，发现本网站系统是采用的CuteEditor器。该器本身的安全还做的可以，分为管理员/user/guest三种权限，其配置文件位于“CuteEditor"Configuration"Security”目录，通过分析Admin.config文件，其涉及安全核心关键代码如下：
+    <configuration> 
+    <security name="RestrictUploadedImageDimension">false</security> 
+    <security name="OverWriteExistingUploadedFile">false</security> 
+    <security name="AutoResizeUploadedImages">true</security> 
+    <security name="MaxImageWidth">1024</security> 
+    <security name="MaxImageHeight">768</security> 
+    <security name="MaxImageSize">1000</security> 
+    <security name="MaxMediaSize">100</security> 
+    <security name="MaxFlashSize">100</security> 
+    <security name="MaxDocumentSize">10000</security> 
+    <security name="MaxTemplateSize">1000</security> 
+    <security name="ImageGalleryPath">~/uploads</security> 
+    <security name="MediaGalleryPath">~/uploads</security> 
+    <security name="FlashGalleryPath">~/uploads</security> 
+    <security name="TemplateGalleryPath">~/templates</security> 
+    <security name="FilesGalleryPath">~/uploads</security> 
+    <security name="MaxImageFolderSize">102400</security> 
+    <security name="MaxMediaFolderSize">102400</security> 
+    <security name="MaxFlashFolderSize">102400</security> 
+    <security name="MaxDocumentFolderSize">102400</security> 
+    <security name="MaxTemplateFolderSize">102400</security> 
+    <security name="ThumbnailWidth">80</security> 
+    <security name="ThumbnailHeight">80</security> 
+    <security name="ThumbnailColumns">5</security> 
+    <security name="ThumbnailRows">3</security> 
+    <security name="AllowUpload">true</security> 
+    <security name="AllowModify">true</security> 
+    <security name="AllowRename">true</security> 
+    <security name="AllowDelete">true</security> 
+    <security name="AllowCopy">true</security> 
+    <security name="AllowMove">true</security>  
+    <security name="AllowCreateFolder">true</security> 
+    <security name="AllowDeleteFolder">true</security> 
+    </configuration>
+在上面的代码中可以看到如果具有管理员权限，那么是可以在网站建立目录，也就是说在某种情况下，完全可以利用IIS文件目录解析漏洞来获的Webshell。
+1.打开媒体上传窗口
+直接在使用该器的网页中单击插入媒体的按钮，出现如图12所示的界面。
+
+图12 打开插入媒体窗口
+2.新建一个simeon.asp的文件夹
+在“Insert Media”窗口中可以发现有一个新建文件夹的图片，如果该图标是灰色的那么就无能为力了，如图13所示，我们新建一个叫“simeon.asp”的文件夹，建立成功后如图14所示。
+
+图13 新建simeon.asp文件夹
+
+图14
+3.上传测试和木马文件
+在图14中单击“simeon.asp”，进入该文件夹下，然后先上传一个html文件，如图15所示，后面我依次上传了包含asp.net的一句话木马和asp的一句话木马，当然也上传了一些asp的大马。
+
+图15 上传测试和木马文件
+注意：
+(1)在CuteEditor中ImageFilters的负责对图片进行过滤，仅仅允许jpg、jpeg、gif和png文件上传，在admin.config中进行配置
+(2)在CuteEditor中MediaFilters的负责对媒体进行过滤，仅仅允许avi 、mpg、mpeg和mp3四种媒体文件。也是在admin.config中进行配置。
+(3)在CuteEditor中DocumentFilters负责对所有的文件类型进行过滤。
+4.连接测试asp.net的一句话木马
+在本地打开asp.net的一句话木马的客户端，输入连接地址和密码后，出现如图16所示的错误。
+
+图16 asp.net的一句话木马运行出错
+5.使用asp的一句话木马
+上传一个包含一句话的flash文件，如图17所示，进行连接测试，一切OK，在后面测试中我还发现其执行效果不太好，可能IIS6.0对以asp文件命名的文件夹解析半对半错。
+　(四)提升权限
+1.查看网站文件路径
+在Function中选择“File List”模块，然后分别对C、D、E盘进行查看，如图18所示，发现网站目录就在E盘下。
+
+图18 获取网站根目录路径
+2.复制文件
+在一句话asp中，通过测试，发现可以复制文件，将上传到“simeon.asp”文件夹中的大马复制到网站根目录中，如图19所示，显示复制成功，这也是本次能够渗透服务器的关键，一句话木马执行命令时不是那么完美，操作起来不太方便，因此在可能的前提下，尽量由小(马)到大(马)。
+
+图19 复制大马到正常网站目录下
+3.执行大马
+直接输入大马的地址，然后输入管理密码，成果进入，如图20所示，至此可以使用大马来做一些信息分析等工作。
+
+图20 执行免杀的大马
+4.使用Serv-U提升权限
+通过该Webshell对服务器进行挖掘发现服务器上面安装了Serv-U，不过路径是在D盘的程序目录，不过没有关系直接单击Webshell左边的菜单中的“Serv-U提权”，在如图21所示的窗口中单击“提交”按钮默认直接添加一个用户名为“user13$”，密码为“pass13”的具有管理员用户。添加成功后显示如下的一些提示信息：
+提权完毕,已执行了命令：
+cmd /c net user user13$ ***** /add & net localgroup administrators user13$ /add
+
+图21 添加管理员账号的系统中
+5.查看提权情况
+另外再上传一个WebAdmin2.X的Aspx的Webshell，然后在Command中输入“net localgroup administrators”查看系统中的管理员组中的用户情况，如图22所示，已经添加用户成功。
+
+图22 添加用户到管理员组中成功
+6.成功进入远程桌面
+通过Webshell找到对方服务器开放3389的修改后的端口8080，在本地打开远程终端连接器，在计算机中输入“www.xxxx.com:8080”进行连接，如图23所示，成功进入对方桌面;然后就是对网站和服务器存在的安全问题进行整理，最后形成一个完成的渗透测试报告，到这里也就可以交差了!
+　(五)安全建议和总结
+　1.安全建议
+针对本次渗透测试中发现的安全问题提出以下一些安全建议：
+(1)及时修补系统中的安全漏洞，尤其是IIS6.0中的目录解析漏洞，对于一些微软公布的高危漏洞还是应该及时更新，降低安全风险。
+(2)对于那些允许注册账号的网站来说，在网站程序编写的时候，程序员通常为了管理方便，便以注册的用户名为名称来建立一个文件夹，用以保存该用户的数据。例如一些图片、文字等等信息。入侵者就是利用了这一特点，特意通过网站注册一个以“.”或者“.cer”等的后续名作注册名，然后通过如把含有木马的ASP 文件的.asp后缀改成.jpg等方法，把文件上传到服务器，由于IIS6漏洞，jpg文件可以通过IIS6来运行，木马也随着运行，达到了攻击网站的目的，这种情况，可以由程序员对注册用户名称进行限制，排除一些带有“*.asp ”、“*.asa”等字符为名的注册名。加强网站自身的安全和防范措施。另外，要阻止用户对文件夹进行重命名操作。
+(3)细化服务器文件目录权限，杜绝权限漏洞
+可以通过修改服务器的配置来实现对这个漏洞的预防。如何对服务器进行配置呢?很多网站都允许用户上传一定数量的图片、Flash 等，很多时候网站开发人员为了日后管理方便，对上传的文件都统一放到指定的一个文件夹里面，管理员只要对该文件夹的执行权限设置成“无”，这样一定程度可以对漏洞进行预防。
+(4)对CuteEditor上传组件，可以在安全配置文件中去掉有关文件夹新建权限。
+(5)网站管理员密码不能设置太弱智，一些简单的猜测如果能够成功，即使程序本身和网站系统没有什么漏洞，也将会导致整个系统的溃败。任何信息的泄露对入侵者来说都会增加入侵成功的可能。
+2.安全总结
+通过本次安全渗透，掌握了利用CuteEditor渗透系统的思路，以及如何在系统中对IIS6.0目录解析漏洞的防范，在整个渗透过程中使用了多种方法，在一种方法行不通的前提下，换种思路或许会达到意想不到的效果。
